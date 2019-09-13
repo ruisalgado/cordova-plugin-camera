@@ -118,6 +118,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
     private boolean correctOrientation;     // Should the pictures orientation be corrected
     private boolean orientationCorrected;   // Has the picture's orientation been corrected
     private boolean allowEdit;              // Should we allow the user to crop the image.
+    private boolean ignoreExternalStorage;    // Should we just use internal storage, managing without {READ|WRITE}_EXTERNAL_STORAGE permissions
 
     protected final static String[] permissions = { Manifest.permission.CAMERA, Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE };
 
@@ -151,6 +152,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             this.srcType = CAMERA;
             this.destType = FILE_URI;
             this.saveToPhotoAlbum = false;
+            this.ignoreExternalStorage = false;
             this.targetHeight = 0;
             this.targetWidth = 0;
             this.encodingType = JPEG;
@@ -168,6 +170,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             this.allowEdit = args.getBoolean(7);
             this.correctOrientation = args.getBoolean(8);
             this.saveToPhotoAlbum = args.getBoolean(9);
+            this.ignoreExternalStorage = args.getBoolean(10);
 
             // If the user specifies a 0 or smaller width/height
             // make it -1 so later comparisons succeed
@@ -190,11 +193,10 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                     this.callTakePicture(destType, encodingType);
                 }
                 else if ((this.srcType == PHOTOLIBRARY) || (this.srcType == SAVEDPHOTOALBUM)) {
-                    // FIXME: Stop always requesting the permission
-                    if(!PermissionHelper.hasPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)) {
-                        PermissionHelper.requestPermission(this, SAVE_TO_ALBUM_SEC, Manifest.permission.READ_EXTERNAL_STORAGE);
-                    } else {
+                    if(this.ignoreExternalStorage || PermissionHelper.hasPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)) {
                         this.getImage(this.srcType, destType, encodingType);
+                    } else {
+                        PermissionHelper.requestPermission(this, SAVE_TO_ALBUM_SEC, Manifest.permission.READ_EXTERNAL_STORAGE);
                     }
                 }
             }
@@ -220,15 +222,12 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
     //--------------------------------------------------------------------------
 
     private String getTempDirectoryPath() {
-        File cache = null;
+        // Use internal storage by default
+        File cache = cordova.getActivity().getCacheDir();
 
-        // SD Card Mounted
-        if (Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED)) {
+        // switch to mounted SD Card when external storage allowed
+        if (!ignoreExternalStorage && Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED)) {
             cache = cordova.getActivity().getExternalCacheDir();
-        }
-        // Use internal storage
-        else {
-            cache = cordova.getActivity().getCacheDir();
         }
 
         // Create the cache directory if it doesn't exist
@@ -278,9 +277,9 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             }
         }
 
-        if (takePicturePermission && saveAlbumPermission) {
+        if (takePicturePermission && (saveAlbumPermission || ignoreExternalStorage)) {
             takePicture(returnType, encodingType);
-        } else if (saveAlbumPermission && !takePicturePermission) {
+        } else if (!takePicturePermission && (saveAlbumPermission || ignoreExternalStorage)) {
             PermissionHelper.requestPermission(this, TAKE_PIC_SEC, Manifest.permission.CAMERA);
         } else if (!saveAlbumPermission && takePicturePermission) {
             PermissionHelper.requestPermissions(this, TAKE_PIC_SEC,
@@ -1242,11 +1241,11 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
      * @return Uri
      */
     private Uri whichContentStore() {
-        if (Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED)) {
-            return MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
-        } else {
-            return MediaStore.Images.Media.INTERNAL_CONTENT_URI;
-        }
+        if (ignoreExternalStorage) return MediaStore.Images.Media.INTERNAL_CONTENT_URI;
+
+        return Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED)
+            ? MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            : MediaStore.Images.Media.INTERNAL_CONTENT_URI;
     }
 
     /**

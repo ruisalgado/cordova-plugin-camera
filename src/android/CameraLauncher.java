@@ -301,7 +301,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
         File photo = createCaptureFile(encodingType);
         this.imageUri = new CordovaUri(FileProvider.getUriForFile(cordova.getActivity(),
                 applicationId + ".provider",
-                photo));
+                photo), cordova.getActivity());
         intent.putExtra(MediaStore.EXTRA_OUTPUT, imageUri.getCorrectUri());
         //We can write to this URI, this will hopefully allow us to write files to get to the next step
         intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
@@ -1376,7 +1376,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
 
         if (state.containsKey(IMAGE_URI_KEY)) {
             //I have no idea what type of URI is being passed in
-            this.imageUri = new CordovaUri(Uri.parse(state.getString(IMAGE_URI_KEY)));
+            this.imageUri = new CordovaUri(Uri.parse(state.getString(IMAGE_URI_KEY)), cordova.getActivity());
         }
 
         this.callbackContext = callbackContext;
@@ -1395,9 +1395,19 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
      */
     private String getFileNameFromUri(Uri uri) {
         String fullUri = uri.toString();
-        String partial_path = fullUri.split("external_files")[1];
-        File external_storage = Environment.getExternalStorageDirectory();
-        String path = external_storage.getAbsolutePath() + partial_path;
-        return path;
+
+        if(fullUri.contains("external_files")) {
+            String partial_path = fullUri.split("external_files")[1];
+            File external_storage = Environment.getExternalStorageDirectory();
+            return external_storage.getAbsolutePath() + partial_path;
+        }
+
+        if (fullUri.contains("cache_files")) {
+            String partial_path = fullUri.split("cache_files")[1];
+            File cache_storage = cordova.getActivity().getCacheDir();
+            return cache_storage.getAbsolutePath() + partial_path;
+        }
+
+        throw new IllegalArgumentException("Unsupported URI: " + fullUri);
     }
 }
